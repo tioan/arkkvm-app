@@ -40,9 +40,9 @@ use crate::jsonrpc::handlers::*;
 use crate::module::rtc_request_params::{
     ATXPowerParams, BacklightSettingsParams, DisplayRotationParams, FilePathParams,
     FileUploadParams, FtFileDownloadParams, LocalFileDownloadParams, NetbirdParams,
-    NetbirdRegisterParams, NetworkSettingsParams, PathParams, RemoveVirtualMediaItemParams,
-    RenewVlanDhcpLeaseParams, SettingSwitchParams, SshKeyParam, TailscaleParams, VersionParams,
-    VirtualMediaListParams, VlanSettingsParams,
+    NetbirdRegisterParams, NetworkSettingsParams, PathParams, PrivateNetworkParams,
+    RemoveVirtualMediaItemParams, RenewVlanDhcpLeaseParams, SettingSwitchParams, SshKeyParam,
+    TailscaleParams, VersionParams, VirtualMediaListParams, VlanSettingsParams,
 };
 use crate::module::rtc_response_params::OtaState;
 use crate::services::gui_pipeline;
@@ -820,7 +820,8 @@ pub mod handlers {
         self as storage_mod, FileTransferState, FileTransferTarget,
     };
     use crate::module::rtc_request_params::{
-        LocalFileDownloadParams, NetbirdParams, NetbirdRegisterParams, SshKeyParam, TailscaleParams,
+        LocalFileDownloadParams, NetbirdParams, NetbirdRegisterParams, PrivateNetworkParams,
+        SshKeyParam, TailscaleParams,
     };
     use crate::module::rtc_response_params::{GuiSettingsResponse, StartDownloadResponse};
     use crate::network::{self, NetworkInterfaceState, RpcIPv6Address, RpcNetworkState};
@@ -2804,6 +2805,18 @@ pub mod handlers {
         let result = plugin::register_netbird_force(params).await?;
         Ok(serde_json::to_value(result)?)
     }
+
+    pub async fn get_private_network() -> Result<Value> {
+        match plugin::private_network::get_state().await {
+            Ok(state) => Ok(serde_json::to_value(state)?),
+            Err(e) => Err(anyhow!("Failed to get private network state: {}", e)),
+        }
+    }
+
+    pub async fn set_private_network(params: PrivateNetworkParams) -> Result<Value> {
+        plugin::private_network::select(params.target).await?;
+        Ok(Value::Null)
+    }
 }
 
 /// Broadcast helpers to the user-role session over RPC
@@ -3709,6 +3722,20 @@ pub fn create_default_registry() -> RpcRegistry {
             let params: NetbirdRegisterParams =
                 params.map(serde_json::from_value).transpose()?.unwrap_or_default();
             Ok(handlers::register_netbird(params).await?)
+        })
+    });
+
+    registry.register_async("getPrivateNetwork", |_params| {
+        Box::pin(async move { Ok(handlers::get_private_network().await?) })
+    });
+
+    // Mutually exclusive overlay selection; stops the previous overlay only after
+    // the new one is connected (see plugin::private_network).
+    registry.register_async("setPrivateNetwork", |params| {
+        Box::pin(async move {
+            let params: PrivateNetworkParams =
+                serde_json::from_value(params.ok_or(anyhow!("Missing required parameters"))?)?;
+            Ok(handlers::set_private_network(params).await?)
         })
     });
 
