@@ -471,11 +471,9 @@ pub fn is_available() -> bool {
 pub async fn run(subcommand: &str, args: &[&str]) -> Result<CommandOutput> {
     ensure_script()?;
 
-    let output = Command::new(INIT_SCRIPT_PATH)
-        .arg(subcommand)
-        .args(args)
-        .env_remove(SETUP_KEY_ENV)
-        .output()
+    let mut cmd = Command::new(INIT_SCRIPT_PATH);
+    cmd.arg(subcommand).args(args).env_remove(SETUP_KEY_ENV);
+    let output = crate::process_spawn::output(cmd)
         .await
         .with_context(|| format!("failed to execute {INIT_SCRIPT_PATH} {subcommand}"))?;
 
@@ -540,8 +538,7 @@ async fn run_register(subcommand: &str, setup_key: Option<&str>) -> Result<Regis
     if let Some(key) = setup_key {
         cmd.env(SETUP_KEY_ENV, key);
     }
-    let mut child = cmd
-        .spawn()
+    let mut child = crate::process_spawn::spawn_tokio(cmd)
         .with_context(|| format!("failed to spawn {INIT_SCRIPT_PATH} {subcommand}"))?;
 
     let mut stdout_lines = BufReader::new(
